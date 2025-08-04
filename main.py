@@ -97,7 +97,7 @@ async def health_check():
     }
 
 
-@app.get("/ping", tags=["Health"])
+@app.get("/ping", methods=["GET", "HEAD"])
 async def ping():
     """Endpoint de ping simple"""
     return {"status": "ok"}
