@@ -96,6 +96,12 @@ async def health_check():
         }
     }
 
+
+@app.get("/ping", tags=["Health"])
+async def ping():
+    """Endpoint de ping simple"""
+    return {"status": "ok"}
+
 @app.post("/generate-letter", 
           response_model=LetterResponse,
           responses={
