@@ -49,4 +49,44 @@ class EmailResponse(BaseModel):
 class ErrorResponse(BaseModel):
     """Modèle pour les réponses d'erreur"""
     error: str = Field(..., description="Message d'erreur")
-    detail: Optional[str] = Field(None, description="Détails de l'erreur") 
+    detail: Optional[str] = Field(None, description="Détails de l'erreur")
+
+
+# Modèles pour le générateur de discours de mariage
+
+class SpeechRequest(BaseModel):
+    """Modèle pour la requête de génération de discours de mariage"""
+    prenom: str = Field(..., description="Prénom de la personne qui fait le discours")
+    marie: str = Field(..., description="Nom de la personne qui se marie")
+    partenaire: str = Field(..., description="Nom du/de la partenaire")
+    lien: str = Field(..., description="Lien avec les mariés")
+    style: Optional[str] = Field(None, description="Style du discours (optionnel)")
+    qualites: Optional[str] = Field(None, description="Qualités du/de la marié(e) (optionnel)")
+    anecdotes: Optional[str] = Field(None, description="Anecdotes à inclure (optionnel)")
+    souvenir: Optional[str] = Field(None, description="Souvenir important à mentionner (optionnel)")
+    rencontre: Optional[str] = Field(None, description="Comment ils se sont rencontrés (optionnel)")
+    duree: Optional[str] = Field(None, description="Durée souhaitée du discours (optionnel)")
+
+
+class SpeechResponse(BaseModel):
+    """Modèle pour la réponse de génération de discours"""
+    speech: str = Field(..., description="Contenu du discours généré")
+    discours_id: Optional[str] = Field(None, description="ID du discours en base de données")
+
+
+class SendSpeechRequest(BaseModel):
+    """Modèle pour la requête d'envoi de discours par email"""
+    email: EmailStr = Field(..., description="Email pour recevoir le discours")
+    discours: str = Field(..., description="Contenu du discours à envoyer")
+
+
+class SendSpeechResponse(BaseModel):
+    """Modèle pour la réponse d'envoi de discours"""
+    status: str = Field(..., description="Statut de l'envoi (success/error)")
+    message: str = Field(..., description="Message d'information")
+
+
+class GetSpeechResponse(BaseModel):
+    """Modèle pour la réponse de récupération de discours"""
+    discours: str = Field(..., description="Contenu du discours")
+    created_at: str = Field(..., description="Date de création du discours") 

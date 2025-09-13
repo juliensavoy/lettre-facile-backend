@@ -209,3 +209,79 @@ class DatabaseManager:
                 "success": False,
                 "error": f"Erreur lors de la recherche: {str(e)}"
             }
+    
+    # Méthodes pour les discours de mariage
+    
+    async def save_speech(self, speech_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Sauvegarde un discours de mariage dans la base de données
+        
+        Args:
+            speech_data: Dictionnaire contenant les données du discours
+            
+        Returns:
+            Dictionnaire avec l'ID du discours créé
+        """
+        try:
+            # Préparation des données pour l'insertion
+            insert_data = {
+                "prenom": speech_data["prenom"],
+                "marie": speech_data["marie"],
+                "partenaire": speech_data["partenaire"],
+                "style": speech_data.get("style"),
+                "lien": speech_data["lien"],
+                "rencontre": speech_data.get("rencontre"),
+                "qualites": speech_data.get("qualites"),
+                "anecdotes": speech_data.get("anecdotes"),
+                "souvenirs": speech_data.get("souvenir"),  # Note: "souvenir" dans les données, "souvenirs" en base
+                "duree": speech_data.get("duree"),
+                "discours": speech_data["discours"]
+            }
+            
+            # Insertion dans la base de données
+            result = self.supabase.table("discours_mariage").insert(insert_data).execute()
+            
+            if result.data:
+                return {
+                    "success": True,
+                    "speech_id": result.data[0]["id"],
+                    "message": "Discours sauvegardé avec succès"
+                }
+            else:
+                raise Exception("Aucune donnée retournée lors de l'insertion")
+                
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Erreur lors de la sauvegarde: {str(e)}"
+            }
+    
+    async def get_speech_by_id(self, speech_id: str) -> Dict[str, Any]:
+        """
+        Récupère un discours par son ID
+        
+        Args:
+            speech_id: ID du discours
+            
+        Returns:
+            Dictionnaire avec les données du discours
+        """
+        try:
+            result = self.supabase.table("discours_mariage").select("discours, created_at").eq("id", speech_id).execute()
+            
+            if result.data:
+                return {
+                    "success": True,
+                    "speech": result.data[0]
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": "Discours non trouvé"
+                }
+                
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Erreur lors de la récupération: {str(e)}"
+            }

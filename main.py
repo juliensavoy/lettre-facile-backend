@@ -1,12 +1,20 @@
 import os
 import logging
-from fastapi import FastAPI, HTTPException, status
+import smtplib
+import uuid
+from datetime import datetime
+from fastapi import FastAPI, HTTPException, status, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 import uvicorn
+from openai import OpenAI
+from email.message import EmailMessage
 
-from models import LetterRequest, LetterResponse, EmailRequest, EmailResponse, ErrorResponse
+from models import (
+    LetterRequest, LetterResponse, EmailRequest, EmailResponse, ErrorResponse,
+    SpeechRequest, SpeechResponse, SendSpeechRequest, SendSpeechResponse, GetSpeechResponse
+)
 from letter import LetterGenerator
 from mailer import EmailSender
 from database import DatabaseManager
@@ -23,8 +31,8 @@ logger = logging.getLogger(__name__)
 
 # Création de l'application FastAPI
 app = FastAPI(
-    title="Lettre Facile Backend",
-    description="API pour la génération automatique de lettres avec OpenAI",
+    title="Lettre Facile & Générateur de Discours Backend",
+    description="API pour la génération automatique de lettres et de discours de mariage avec OpenAI",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc"
@@ -43,11 +51,16 @@ app.add_middleware(
 letter_generator = None
 email_sender = None
 database_manager = None
+openai_client = None
+
+# Configuration pour les discours de mariage
+EMAIL_FROM = os.getenv("EMAIL_FROM")
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
 
 @app.on_event("startup")
 async def startup_event():
     """Initialise les services au démarrage de l'application"""
-    global letter_generator, email_sender, database_manager
+    global letter_generator, email_sender, database_manager, openai_client
     
     try:
         # Vérification des variables d'environnement
@@ -69,6 +82,11 @@ async def startup_event():
         email_sender = EmailSender()
         database_manager = DatabaseManager()
         
+        # Initialisation du client OpenAI pour les discours
+        api_key = os.getenv("OPENAI_API_KEY")
+        if api_key:
+            openai_client = OpenAI(api_key=api_key)
+        
         logger.info("Application démarrée avec succès")
         
     except Exception as e:
@@ -79,9 +97,10 @@ async def startup_event():
 async def root():
     """Point d'entrée principal - vérification de santé de l'API"""
     return {
-        "message": "Lettre Facile Backend API",
+        "message": "Lettre Facile & Générateur de Discours Backend API",
         "version": "1.0.0",
-        "status": "running"
+        "status": "running",
+        "features": ["Lettres automatiques", "Discours de mariage"]
     }
 
 @app.get("/health", tags=["Health"])
@@ -96,11 +115,14 @@ async def health_check():
         }
     }
 
-
-@app.get("/ping", methods=["GET", "HEAD"])
+@app.get("/ping", tags=["Health"])
 async def ping():
-    """Endpoint de ping simple"""
-    return {"status": "ok"}
+    """Endpoint simple pour les pings (UptimeRobot, etc.)"""
+    return {
+        "status": "ok",
+        "timestamp": datetime.now().isoformat(),
+        "service": "Lettre Facile & Générateur de Discours Backend"
+    }
 
 @app.post("/generate-letter", 
           response_model=LetterResponse,
@@ -365,6 +387,232 @@ async def get_letters_by_email(email: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Erreur interne du serveur: {str(e)}"
+        )
+
+
+# Endpoints pour le générateur de discours de mariage
+
+@app.post("/generate", 
+          response_model=SpeechResponse,
+          responses={
+              400: {"model": ErrorResponse},
+              500: {"model": ErrorResponse}
+          },
+          tags=["Wedding Speeches"])
+async def generate_speech(
+    prenom: str = Form(...),
+    marie: str = Form(...),
+    partenaire: str = Form(...),
+    lien: str = Form(...),
+    style: str = Form(None),
+    qualites: str = Form(None),
+    anecdotes: str = Form(None),
+    souvenir: str = Form(None),
+    rencontre: str = Form(None),
+    duree: str = Form(None),
+):
+    """
+    Génère un discours de mariage personnalisé.
+    
+    - **prenom**: Prénom de la personne qui fait le discours
+    - **marie**: Nom de la personne qui se marie
+    - **partenaire**: Nom du/de la partenaire
+    - **lien**: Lien avec les mariés
+    - **style**: Style du discours (optionnel)
+    - **qualites**: Qualités du/de la marié(e) (optionnel)
+    - **anecdotes**: Anecdotes à inclure (optionnel)
+    - **souvenir**: Souvenir important à mentionner (optionnel)
+    - **rencontre**: Comment ils se sont rencontrés (optionnel)
+    - **duree**: Durée souhaitée du discours (optionnel)
+    """
+    
+    try:
+        if not openai_client:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Service OpenAI non configuré"
+            )
+        
+        logger.info(f"Début de génération de discours pour {prenom}")
+        
+        # Construction du prompt
+        prompt_parts = [
+            f"Tu es une intelligence artificielle chargée d'écrire un discours de mariage personnalisé.",
+            f"La personne qui parle s'appelle {prenom}, et fait un discours pour {marie}, qui se marie avec {partenaire}.",
+            f"Son lien avec les mariés est : {lien}.",
+        ]
+
+        if style:
+            prompt_parts.append(f"Le style du discours doit être {style}.")
+        if rencontre:
+            prompt_parts.append(f"Ils se sont rencontrés de la manière suivante : {rencontre}.")
+        if qualites:
+            prompt_parts.append(f"Voici les qualités du ou de la marié(e) : {qualites}.")
+        if anecdotes:
+            prompt_parts.append(f"Inclus l'anecdote suivante dans le discours : {anecdotes}.")
+        if souvenir:
+            prompt_parts.append(f"Voici un souvenir important à mentionner : {souvenir}.")
+        if duree:
+            prompt_parts.append(f"Le discours doit durer environ {duree}.")
+
+        prompt_parts.append("Rédige un discours naturel, fluide, adapté à un mariage.")
+
+        final_prompt = " ".join(prompt_parts)
+
+        # Génération du discours avec OpenAI
+        response = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": final_prompt}],
+            max_tokens=1000
+        )
+
+        speech = response.choices[0].message.content
+        
+        # Sauvegarde en base de données
+        discours_id = None
+        try:
+            speech_data = {
+                "prenom": prenom,
+                "marie": marie,
+                "partenaire": partenaire,
+                "style": style,
+                "lien": lien,
+                "rencontre": rencontre,
+                "qualites": qualites,
+                "anecdotes": anecdotes,
+                "souvenir": souvenir,
+                "duree": duree,
+                "discours": speech
+            }
+            
+            db_result = await database_manager.save_speech(speech_data)
+            if db_result["success"]:
+                discours_id = db_result["speech_id"]
+                logger.info(f"Discours sauvegardé en base avec l'ID: {discours_id}")
+            else:
+                logger.warning(f"Erreur lors de la sauvegarde en base: {db_result['error']}")
+                
+        except Exception as e:
+            logger.error(f"Erreur lors de la sauvegarde en base: {str(e)}")
+        
+        logger.info("Discours généré avec succès")
+        
+        return SpeechResponse(
+            speech=speech,
+            discours_id=discours_id
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erreur lors de la génération de discours: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erreur interne du serveur: {str(e)}"
+        )
+
+
+@app.post("/send-discours", 
+          response_model=SendSpeechResponse,
+          responses={
+              400: {"model": ErrorResponse},
+              500: {"model": ErrorResponse}
+          },
+          tags=["Wedding Speeches"])
+async def send_discours(email: str = Form(...), discours: str = Form(...)):
+    """
+    Envoie un discours de mariage par email.
+    
+    - **email**: Email pour recevoir le discours
+    - **discours**: Contenu du discours à envoyer
+    """
+    
+    try:
+        if not EMAIL_FROM or not EMAIL_PASSWORD:
+            return SendSpeechResponse(
+                status="error",
+                message="Configuration e-mail manquante"
+            )
+
+        logger.info(f"Début d'envoi de discours à {email}")
+
+        msg = EmailMessage()
+        msg["Subject"] = "Votre discours de mariage complet 💍"
+        msg["From"] = EMAIL_FROM
+        msg["To"] = email
+        msg.set_content(discours)
+
+        with smtplib.SMTP_SSL("mail.infomaniak.com", 465) as smtp:
+            smtp.login(EMAIL_FROM, EMAIL_PASSWORD)
+            smtp.send_message(msg)
+        
+        logger.info(f"Discours envoyé avec succès à {email}")
+        
+        return SendSpeechResponse(
+            status="success",
+            message="Email envoyé"
+        )
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de l'envoi du discours: {str(e)}")
+        return SendSpeechResponse(
+            status="error",
+            message=str(e)
+        )
+
+
+@app.get("/discours/{discours_id}", 
+         response_model=GetSpeechResponse,
+         responses={
+             400: {"model": ErrorResponse},
+             404: {"model": ErrorResponse},
+             500: {"model": ErrorResponse}
+         },
+         tags=["Wedding Speeches"])
+async def get_discours(discours_id: str):
+    """
+    Récupère un discours par son ID UUID.
+    
+    - **discours_id**: ID du discours
+    """
+    
+    try:
+        if not database_manager:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Service de base de données non disponible"
+            )
+        
+        # Valider que l'ID est un UUID valide
+        try:
+            uuid.UUID(discours_id)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="ID de discours invalide"
+            )
+        
+        result = await database_manager.get_speech_by_id(discours_id)
+        
+        if result["success"]:
+            speech_data = result["speech"]
+            return GetSpeechResponse(
+                discours=speech_data['discours'],
+                created_at=speech_data['created_at']
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=result["error"]
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération du discours: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erreur lors de la récupération du discours"
         )
 
 
